@@ -1,26 +1,77 @@
 import fetch from "node-fetch"
 import { JSDOM } from "jsdom"
 
-const search = process.argv[2]
-// const url = `https://www.bigbadtoystore.com/Search?SearchText=${encodeURIComponent(search)}`
-const url = `https://www.bigbadtoystore.com/Search?PageSize=100&SearchText=${encodeURIComponent(search)}`
-
-async function main() {
-    const payload = await fetch(url).then(res => res.text());
-    const { document } = new JSDOM(payload).window;
-    const rows = document.querySelectorAll(".results-list > .row")
-    const result = [...rows].map(scrape)
-    console.log(JSON.stringify(result, null, 2))
+type ScrapeResult = {
+    name: any;
+    status?: any;
+    company: any;
+    price: string;
+    photo?: any;
 }
 
-const scrape = (row:any) => {
-    const name = row.querySelector(".product-name").textContent
-    const status = row.querySelector(".product-link-btn").getAttribute("alt")
-    const company = row.querySelector(".product-companies").textContent
-    const priceInteger = row.querySelector(".price-integer").textContent
-    const priceDecimal = row.querySelector(".price-decimal").textContent
+const search = process.argv[2]
+
+const createUrl = (pageIndex: number) => {
+    return `https://www.bigbadtoystore.com/Search?PageIndex=${pageIndex}&PageSize=100&SearchText=${encodeURIComponent(search)}`
+}
+
+const fetchPageDocument = async (pageIndex: number) => {
+    const payload = await fetch(createUrl(pageIndex)).then(res => res.text());
+    const { document } = new JSDOM(payload).window;
+    return document;
+}
+
+const getResult = (document: Document) => {
+    const rows = document.querySelectorAll(".results-list > .row")
+    return [...rows].map(scrape)
+}
+
+async function main() {
+    let currentPageIndex: number = 1
+    let aggregatedResult: ScrapeResult[] = []
+
+    while (true) {
+        const currentDocument = await fetchPageDocument(currentPageIndex)
+        const result = getResult(currentDocument)
+
+        if (!result.length) {
+            break;
+        };
+
+        if (process.env.DEBUG) {
+            console.log(`Got results for page: ${currentPageIndex}`)
+        }
+
+        aggregatedResult = [
+            ...aggregatedResult,
+            ...result
+        ]
+
+        currentPageIndex++
+    }
+
+    console.log(JSON.stringify(aggregatedResult, null, 2))
+}
+
+const elementNotFound = {
+    getAttribute: () => undefined,
+    textContent: undefined
+}
+
+const createSelector = (row: Element) =>
+    (selector: string) =>
+        (row.querySelector(selector) || elementNotFound)
+
+const scrape = (row: Element): ScrapeResult => {
+    const selector = createSelector(row)
+
+    const name = selector(".product-name").textContent 
+    const status = selector(".product-link-btn").getAttribute("alt")
+    const company = selector(".product-companies").textContent
+    const priceInteger = selector(".price-integer").textContent
+    const priceDecimal = selector(".price-decimal").textContent
     const price = `${priceInteger}.${priceDecimal}`
-    const photo = row.querySelector(".product-thumbnail").getAttribute("src")
+    const photo = selector(".product-thumbnail").getAttribute("src")
     
     return {
         name,
