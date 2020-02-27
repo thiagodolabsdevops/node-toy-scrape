@@ -10,13 +10,26 @@ type ScrapeResult = {
 }
 
 const search = process.argv[2]
+const pageLimit = Number(process.env.PAGE_LIMIT)
+const pageSize = process.env.PAGE_SIZE
+    ? Number(process.env.PAGE_SIZE)
+    : 20
+
+const hasPageLimit = !isNaN(pageLimit)
+const hasDebug = process.env.DEBUG === "1"
 
 const createUrl = (pageIndex: number) => {
-    return `https://www.bigbadtoystore.com/Search?PageIndex=${pageIndex}&PageSize=100&SearchText=${encodeURIComponent(search)}`
+    return `https://www.bigbadtoystore.com/Search?PageIndex=${pageIndex}&PageSize=${pageSize}&SearchText=${encodeURIComponent(search)}`
 }
 
 const fetchPageDocument = async (pageIndex: number) => {
-    const payload = await fetch(createUrl(pageIndex)).then(res => res.text());
+    const url = createUrl(pageIndex);
+
+    if (hasDebug) {
+      console.log(`[PAGE ${pageIndex}]: Fetching ${url}`)
+    }
+
+    const payload = await fetch(url).then(res => res.text());
     const { document } = new JSDOM(payload).window;
     return document;
 }
@@ -27,8 +40,12 @@ const getResult = (document: Document) => {
 }
 
 async function main() {
+    if (hasPageLimit && hasDebug) {
+      console.log(`[DEBUG]: Running with PAGE_LIMIT=${pageLimit}.`)
+    }
+
+    const aggregatedResult: ScrapeResult[] = []
     let currentPageIndex: number = 1
-    let aggregatedResult: ScrapeResult[] = []
 
     while (true) {
         const currentDocument = await fetchPageDocument(currentPageIndex)
@@ -39,18 +56,23 @@ async function main() {
         };
 
         if (process.env.DEBUG) {
-            console.log(`Got results for page: ${currentPageIndex}`)
+            console.log(`[PAGE ${currentPageIndex}]: Got ${result.length} results.`)
         }
 
-        aggregatedResult = [
-            ...aggregatedResult,
-            ...result
-        ]
+        aggregatedResult.push(...result)
+
+        if (hasPageLimit && currentPageIndex === pageLimit) {
+          break;
+        }
 
         currentPageIndex++
-    }
+   }
 
     console.log(JSON.stringify(aggregatedResult, null, 2))
+
+    if (hasDebug) {
+      console.log(`[DEBUG]: Done. Fetched ${currentPageIndex} pages.`)
+    }
 }
 
 const elementNotFound = {
@@ -60,7 +82,7 @@ const elementNotFound = {
 
 const createSelector = (row: Element) =>
     (selector: string) =>
-        (row.querySelector(selector) || elementNotFound)
+        (row.querySelector(selector) ?? elementNotFound)
 
 const scrape = (row: Element): ScrapeResult => {
     const selector = createSelector(row)
