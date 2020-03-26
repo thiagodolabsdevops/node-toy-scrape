@@ -40,7 +40,7 @@ DEBUG=1 npm start "Mezco"
 # Run search and save results into a json file
 npm --silent start "Mezco" > ./mezco-results.json
 
-# Run search for Marvel with 100 as page size, 10 as page limit and debug enabled.
+# Run search for Marvel with 20 as page size, 10 as page limit and debug enabled.
 PAGE_SIZE=20 PAGE_LIMIT=10 DEBUG=1 npm start "Marvel"
 ```
 
